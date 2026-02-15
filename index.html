@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dzeko - the Darkbreaker</title>
+  <style>
+    :root {
+      --ink: #d5d8e6;
+      --bg: #05060a;
+      --panel: #121524dd;
+      --accent: #aa2d2d;
+      --accent-2: #4f6fb8;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: radial-gradient(circle at top, #111423 0%, var(--bg) 55%, #030306 100%);
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .instructions {
+      width: min(1040px, 94vw);
+      margin: 1rem auto 0.75rem;
+      background: var(--panel);
+      border: 1px solid #353b57;
+      border-radius: 12px;
+      padding: 0.8rem 1rem;
+      line-height: 1.45;
+      box-shadow: 0 14px 35px #00000070;
+    }
+
+    .instructions strong {
+      color: #ffffff;
+    }
+
+    #game-container {
+      width: min(1040px, 94vw);
+      margin-bottom: 1rem;
+      border: 1px solid #2f3550;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 22px 60px #000000a3;
+    }
+
+    a { color: #89b6ff; }
+  </style>
+</head>
+<body>
+  <div class="instructions">
+    <strong>How to play:</strong> Lead Dzeko, the black-armored Berserker, through story-driven grid battles. Click a blue-highlighted tile to move, then click a red-highlighted enemy to attack. End your turn with the button in the HUD, survive each mission, and grow stronger as allies join your cause. From map 4 onward, uncover the truth behind the undead legions and defeat the hidden mastermind of infinite evil.
+  </div>
+  <div id="game-container"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.90.0/dist/phaser.min.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>
