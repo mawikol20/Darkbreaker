@@ -446,7 +446,6 @@ BattleScene.prototype.createUnit = function createUnit(id, x, y, side, persisted
     move: def.move,
     range: def.range,
     acted: false,
-    moved: false,
     level: persisted?.level || 1,
     xp: persisted?.xp || 0,
     atk: persisted?.atk || def.atk,
@@ -513,17 +512,12 @@ BattleScene.prototype.onTileClicked = function onTileClicked(x, y) {
     return;
   }
 
-  if (!this.selectedUnit || this.selectedUnit.acted) return;
+  if (!this.selectedUnit) return;
 
   if (clickedUnit && clickedUnit.side === 'enemy') {
     if (this.isInRange(this.selectedUnit, clickedUnit)) {
-      const attacker = this.selectedUnit;
-      this.performAttack(attacker, clickedUnit, () => this.afterPlayerAction(attacker));
+      this.performAttack(this.selectedUnit, clickedUnit, () => this.afterPlayerAction(this.selectedUnit));
     }
-    return;
-  }
-
-  if (this.selectedUnit.moved) {
     return;
   }
 
@@ -531,15 +525,8 @@ BattleScene.prototype.onTileClicked = function onTileClicked(x, y) {
   const canMove = moveTiles.some((t) => t.x === x && t.y === y);
 
   if (canMove) {
-    const unit = this.selectedUnit;
-    this.moveUnit(unit, x, y, () => {
-      unit.moved = true;
-      this.clearHighlights();
-      this.highlightAttackTargets(unit);
-      const canAttackAfterMove = this.enemyUnits.some((enemy) => this.isInRange(unit, enemy));
-      if (!canAttackAfterMove) {
-        this.unitInfo.setText('No enemy in range after moving. Use END TURN or select another unit.');
-      }
+    this.moveUnit(this.selectedUnit, x, y, () => {
+      this.highlightAttackTargets(this.selectedUnit);
     });
   }
 };
@@ -555,8 +542,7 @@ BattleScene.prototype.selectUnit = function selectUnit(unit) {
     `HP ${unit.hp}/${unit.maxHp}`,
     `ATK ${unit.atk}  MOV ${unit.move}  RNG ${unit.range}`,
     `LV ${unit.level}  XP ${unit.xp}/100`,
-    unit.id === 'dzeko' && unit.level >= 2 ? 'Skill: Ruin Cleave (AoE splash)' : 'Skill: Basic Brutal Strike',
-    unit.moved ? 'Status: Moved (can still attack if in range)' : 'Status: Ready'
+    unit.id === 'dzeko' && unit.level >= 2 ? 'Skill: Ruin Cleave (AoE splash)' : 'Skill: Basic Brutal Strike'
   ]);
 
   const pixel = this.gridToPixel(unit.x, unit.y);
@@ -645,63 +631,51 @@ BattleScene.prototype.performAttack = function performAttack(attacker, target, o
 
   this.playSfx(this.sfxSlash);
 
-  this.tweens.add({
-    targets: attacker.aura,
-    x: dashX,
-    y: dashY + 20,
-    duration: 120,
-    ease: 'Quad.easeOut',
-    yoyo: true,
-    repeat: 1
-  });
-
-  this.tweens.add({
-    targets: attacker.hpText,
-    x: dashX - 18,
-    y: dashY + 22,
-    duration: 120,
-    ease: 'Quad.easeOut',
-    yoyo: true,
-    repeat: 1
-  });
-
-  this.tweens.add({
+  this.tweens.timeline({
     targets: attacker.sprite,
-    x: dashX,
-    y: dashY,
-    duration: 120,
-    ease: 'Quad.easeOut',
-    yoyo: true,
-    repeat: 1,
-    onComplete: () => {
-      try {
-        this.flash.setFillStyle(0xffffff, 0.32);
-        this.tweens.add({ targets: this.flash, alpha: 0.01, duration: 180 });
+    tweens: [
+      { x: dashX, y: dashY, duration: 120, ease: 'Quad.easeOut' },
+      { x: start.x, y: start.y, duration: 120, ease: 'Quad.easeIn' }
+    ]
+  });
 
-        this.playSfx(this.sfxHit);
-        this.cameras.main.shake(160, 0.008);
-        if (this.bloodParticles && typeof this.bloodParticles.explode === 'function') {
-          this.bloodParticles.explode(12, end.x, end.y);
-        } else if (this.bloodParticles && typeof this.bloodParticles.emitParticleAt === 'function') {
-          this.bloodParticles.emitParticleAt(end.x, end.y, 12);
-        }
+  this.tweens.timeline({
+    targets: attacker.aura,
+    tweens: [
+      { x: dashX, y: dashY + 20, duration: 120, ease: 'Quad.easeOut' },
+      { x: start.x, y: start.y + 20, duration: 120, ease: 'Quad.easeIn' }
+    ]
+  });
 
-        const dmg = Phaser.Math.Between(attacker.atk - 2, attacker.atk + 2);
-        this.applyDamage(attacker, target, dmg);
+  this.tweens.timeline({
+    targets: attacker.hpText,
+    tweens: [
+      { x: dashX - 18, y: dashY + 22, duration: 120, ease: 'Quad.easeOut' },
+      { x: start.x - 18, y: start.y + 22, duration: 120, ease: 'Quad.easeIn' }
+    ]
+  });
 
-        if (attacker.id === 'dzeko' && attacker.level >= 2) {
-          this.applyCleaveSplash(attacker, target);
-        }
-      } catch (err) {
-        console.error('Attack resolution error:', err);
-      }
+  this.time.delayedCall(100, () => {
+    this.flash.setFillStyle(0xffffff, 0.32);
+    this.tweens.add({ targets: this.flash, alpha: 0.01, duration: 180 });
 
+    this.playSfx(this.sfxHit);
+    this.cameras.main.shake(160, 0.008);
+    this.bloodParticles.explode(12, end.x, end.y);
+
+    const dmg = Phaser.Math.Between(attacker.atk - 2, attacker.atk + 2);
+    this.applyDamage(attacker, target, dmg);
+
+    if (attacker.id === 'dzeko' && attacker.level >= 2) {
+      this.applyCleaveSplash(attacker, target);
+    }
+
+    this.time.delayedCall(240, () => {
       this.processing = false;
       if (onDone) onDone();
-    }
+    });
   });
 };
-
 
 BattleScene.prototype.applyCleaveSplash = function applyCleaveSplash(attacker, primaryTarget) {
   this.enemyUnits
@@ -716,9 +690,9 @@ BattleScene.prototype.applyCleaveSplash = function applyCleaveSplash(attacker, p
 
 BattleScene.prototype.applyDamage = function applyDamage(attacker, target, dmg) {
   target.hp = Math.max(0, target.hp - dmg);
-  if (target.hpText && target.hpText.active) target.hpText.setText(`${target.hp}`);
+  target.hpText.setText(`${target.hp}`);
 
-  const pop = this.add.text((target.sprite?.x || 0) - 8, (target.sprite?.y || 0) - 48, `-${dmg}`, {
+  const pop = this.add.text(target.sprite.x - 8, target.sprite.y - 48, `-${dmg}`, {
     fontSize: '22px',
     color: '#ff6464',
     fontStyle: 'bold',
@@ -735,7 +709,7 @@ BattleScene.prototype.applyDamage = function applyDamage(attacker, target, dmg) 
   });
 
   this.tweens.add({
-    targets: [target.sprite, target.hpText].filter(Boolean),
+    targets: [target.sprite, target.hpText],
     x: `+=${Phaser.Math.Between(-8, 8)}`,
     yoyo: true,
     repeat: 2,
@@ -790,7 +764,6 @@ BattleScene.prototype.killUnit = function killUnit(unit) {
 
 BattleScene.prototype.afterPlayerAction = function afterPlayerAction(unit) {
   unit.acted = true;
-  unit.moved = true;
   this.selectedUnit = null;
   this.cursor.setVisible(false);
   this.clearHighlights();
@@ -904,7 +877,7 @@ BattleScene.prototype.getStepTowards = function getStepTowards(unit, target) {
 BattleScene.prototype.startPlayerTurn = function startPlayerTurn() {
   this.turn = 'player';
   this.turnText.setText('Turn: Player');
-  this.playerUnits.forEach((u) => { u.acted = false; u.moved = false; });
+  this.playerUnits.forEach((u) => { u.acted = false; });
   this.checkBattleState();
 };
 
