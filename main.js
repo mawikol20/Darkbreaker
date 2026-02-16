@@ -238,6 +238,7 @@ BattleScene.prototype.create = function create() {
   this.processing = false;
 
   this.createBackground();
+  if (typeof window !== 'undefined') window.__darkbreakerScene = this;
   this.createGrid();
   this.createHud();
   this.createFx();
