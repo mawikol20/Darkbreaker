@@ -653,21 +653,27 @@ BattleScene.prototype.performAttack = function performAttack(attacker, target, o
     if (finalized) return;
     finalized = true;
 
+    let impactResolved = false;
     const resolveImpact = () => {
+      if (impactResolved) return;
+      impactResolved = true;
+
       try {
-        this.flash.setFillStyle(0xffffff, 0.32);
-        this.tweens.add({ targets: this.flash, alpha: 0.01, duration: 180 });
+        this.flash.setFillStyle(0xffffff, 0.34);
+        this.tweens.add({ targets: this.flash, alpha: 0.01, duration: 200 });
 
         this.playSfx(this.sfxHit);
-        this.cameras.main.shake(180, 0.009);
+        this.cameras.main.shake(260, 0.012);
         if (this.bloodParticles && typeof this.bloodParticles.explode === 'function') {
-          this.bloodParticles.explode(16, end.x, end.y);
+          this.bloodParticles.explode(26, end.x, end.y);
         } else if (this.bloodParticles && typeof this.bloodParticles.emitParticleAt === 'function') {
-          this.bloodParticles.emitParticleAt(end.x, end.y, 16);
+          this.bloodParticles.emitParticleAt(end.x, end.y, 26);
         }
 
-        const dmg = Phaser.Math.Between(attacker.atk - 2, attacker.atk + 2);
-        this.applyDamage(attacker, target, dmg);
+        // SRW-like big damage scaling: heavy units hit harder.
+        const hpScale = Math.floor(attacker.maxHp * 0.28);
+        const dmg = Phaser.Math.Between(attacker.atk + hpScale - 3, attacker.atk + hpScale + 4);
+        this.applyDamage(attacker, target, Math.max(1, dmg));
 
         if (attacker.id === 'dzeko' && attacker.level >= 2) {
           this.applyCleaveSplash(attacker, target);
@@ -681,11 +687,13 @@ BattleScene.prototype.performAttack = function performAttack(attacker, target, o
     };
 
     try {
-      this.playDuelCinematic(attacker, target, resolveImpact);
+      this.playSuperRobotWarsSequence(attacker, target, resolveImpact);
     } catch (err) {
-      console.error('Cinematic error:', err);
+      console.error('SRW cinematic error:', err);
       resolveImpact();
     }
+
+    this.time.delayedCall(1700, resolveImpact);
   };
 
   this.tweens.add({
@@ -722,50 +730,91 @@ BattleScene.prototype.performAttack = function performAttack(attacker, target, o
   this.time.delayedCall(560, finalizeAttack);
 };
 
-BattleScene.prototype.playDuelCinematic = function playDuelCinematic(attacker, target, onDone) {
-  const overlay = this.add.container(380, 320).setDepth(2400);
+BattleScene.prototype.playSuperRobotWarsSequence = function playSuperRobotWarsSequence(attacker, target, onDone) {
+  const overlay = this.add.container(380, 320).setDepth(3500);
 
-  const back = this.add.rectangle(0, 0, 760, 640, 0x000000, 0.68);
-  const top = this.add.rectangle(0, -270, 760, 170, 0x070912, 0.97);
-  const bottom = this.add.rectangle(0, 270, 760, 170, 0x070912, 0.97);
+  const veil = this.add.rectangle(0, 0, 760, 640, 0x020308, 0.94);
+  const streaks = this.add.graphics();
+  for (let i = 0; i < 24; i += 1) {
+    const y = -300 + i * 26;
+    const alpha = (i % 2 === 0) ? 0.2 : 0.08;
+    streaks.fillStyle(i % 2 === 0 ? 0x4b5f96 : 0x992f45, alpha);
+    streaks.fillRect(-420, y, 840, 10);
+  }
 
-  const leftColor = attacker.side === 'player' ? 0x2b3556 : 0x5a2e3b;
-  const rightColor = target.side === 'player' ? 0x2b3556 : 0x5a2e3b;
+  const upperBand = this.add.rectangle(0, -278, 760, 152, 0x090b15, 0.98);
+  const lowerBand = this.add.rectangle(0, 278, 760, 152, 0x090b15, 0.98);
 
-  const leftPanel = this.add.rectangle(-520, -28, 330, 230, leftColor, 0.92).setStrokeStyle(3, 0x95b5ff, 0.65);
-  const rightPanel = this.add.rectangle(520, 28, 330, 230, rightColor, 0.92).setStrokeStyle(3, 0xff8a9e, 0.65);
+  const attackerFrame = this.add.rectangle(-230, 4, 320, 270, 0x1a2544, 0.96).setStrokeStyle(4, 0x8ab0ff, 0.9);
+  const targetFrame = this.add.rectangle(230, -4, 320, 270, 0x40192c, 0.96).setStrokeStyle(4, 0xff8da6, 0.9);
 
-  const leftName = this.add.text(-610, -88, `${attacker.portrait} ${attacker.name}`, { fontSize: '28px', color: '#f1f4ff', fontStyle: 'bold' });
-  const leftClass = this.add.text(-610, -44, attacker.className, { fontSize: '16px', color: '#d4defa' });
-  const rightName = this.add.text(360, 8, `${target.portrait} ${target.name}`, { fontSize: '28px', color: '#ffeef1', fontStyle: 'bold' });
-  const rightClass = this.add.text(360, 52, target.className, { fontSize: '16px', color: '#f0d1d9' });
+  const attackerAvatar = this.add.circle(-230, 6, 84, 0x2a385f, 1).setStrokeStyle(5, 0xafc8ff, 0.9);
+  const targetAvatar = this.add.circle(230, -2, 84, 0x5d2539, 1).setStrokeStyle(5, 0xffadbf, 0.9);
 
-  const vsText = this.add.text(0, -10, 'CLASH', { fontSize: '52px', color: '#ffffff', fontStyle: 'bold', stroke: '#220000', strokeThickness: 8 }).setOrigin(0.5).setAlpha(0);
-  const slash = this.add.rectangle(0, 0, 640, 14, 0xffffff, 0).setAngle(-14).setBlendMode(Phaser.BlendModes.ADD);
+  const attackerIcon = this.add.text(-230, 6, attacker.portrait, { fontSize: '72px' }).setOrigin(0.5);
+  const targetIcon = this.add.text(230, -2, target.portrait, { fontSize: '72px' }).setOrigin(0.5);
 
-  overlay.add([back, top, bottom, leftPanel, rightPanel, leftName, leftClass, rightName, rightClass, vsText, slash]);
+  const attackerName = this.add.text(-365, -110, `${attacker.name} • ${attacker.className}`, { fontSize: '24px', color: '#e8efff', fontStyle: 'bold' });
+  const targetName = this.add.text(86, 92, `${target.name} • ${target.className}`, { fontSize: '24px', color: '#ffe9ee', fontStyle: 'bold' });
 
-  this.tweens.add({ targets: [top, bottom], y: '-=110', duration: 180, ease: 'Sine.easeOut' });
-  this.tweens.add({ targets: [leftPanel, leftName, leftClass], x: '+=350', duration: 220, ease: 'Cubic.easeOut' });
-  this.tweens.add({ targets: [rightPanel, rightName, rightClass], x: '-=350', duration: 220, ease: 'Cubic.easeOut' });
-  this.tweens.add({ targets: vsText, alpha: 1, scale: { from: 1.4, to: 1.0 }, duration: 150, yoyo: true, hold: 160 });
+  const maxBarW = 250;
+  const aHpRatio = Phaser.Math.Clamp(attacker.hp / attacker.maxHp, 0, 1);
+  const tHpRatio = Phaser.Math.Clamp(target.hp / target.maxHp, 0, 1);
+  const aBarBg = this.add.rectangle(-230, 112, maxBarW, 18, 0x000000, 0.78);
+  const tBarBg = this.add.rectangle(230, -112, maxBarW, 18, 0x000000, 0.78);
+  const aBar = this.add.rectangle(-230 - (maxBarW * (1 - aHpRatio)) / 2, 112, maxBarW * aHpRatio, 14, 0x52a9ff, 1);
+  const tBar = this.add.rectangle(230 - (maxBarW * (1 - tHpRatio)) / 2, -112, maxBarW * tHpRatio, 14, 0xff5f78, 1);
 
-  this.time.delayedCall(260, () => {
-    slash.setFillStyle(0xffffff, 0.9);
-    this.tweens.add({
-      targets: slash,
-      scaleX: { from: 0.15, to: 1.1 },
-      alpha: { from: 1, to: 0 },
-      duration: 220,
-      ease: 'Quad.easeOut'
-    });
+  const aHpText = this.add.text(-348, 128, `HP ${attacker.hp.toString().padStart(4, '0')} / ${attacker.maxHp.toString().padStart(4, '0')}`, { fontSize: '18px', color: '#b8d4ff' });
+  const tHpText = this.add.text(102, -96, `HP ${target.hp.toString().padStart(4, '0')} / ${target.maxHp.toString().padStart(4, '0')}`, { fontSize: '18px', color: '#ffbecb' });
+
+  const clash = this.add.text(0, -8, 'FULL BURST', {
+    fontSize: '58px',
+    color: '#ffffff',
+    fontStyle: 'bold',
+    stroke: '#2b0000',
+    strokeThickness: 9
+  }).setOrigin(0.5).setAlpha(0);
+
+  const dmgText = this.add.text(230, -6, '', {
+    fontSize: '78px',
+    color: '#ffec7a',
+    fontStyle: 'bold',
+    stroke: '#3a0000',
+    strokeThickness: 10
+  }).setOrigin(0.5).setAlpha(0);
+
+  overlay.add([
+    veil, streaks, upperBand, lowerBand,
+    attackerFrame, targetFrame, attackerAvatar, targetAvatar,
+    attackerIcon, targetIcon, attackerName, targetName,
+    aBarBg, tBarBg, aBar, tBar, aHpText, tHpText,
+    clash, dmgText
+  ]);
+
+  this.tweens.add({ targets: streaks, x: 44, yoyo: true, repeat: -1, duration: 190, ease: 'Linear' });
+  this.tweens.add({ targets: [upperBand, lowerBand], y: '-=88', duration: 170, ease: 'Sine.easeOut' });
+  this.tweens.add({ targets: [attackerFrame, attackerAvatar, attackerIcon, attackerName, aBarBg, aBar, aHpText], x: '+=120', duration: 190, ease: 'Cubic.easeOut' });
+  this.tweens.add({ targets: [targetFrame, targetAvatar, targetIcon, targetName, tBarBg, tBar, tHpText], x: '-=120', duration: 190, ease: 'Cubic.easeOut' });
+
+  this.time.delayedCall(170, () => {
+    this.tweens.add({ targets: clash, alpha: 1, scale: { from: 1.35, to: 1 }, duration: 180, yoyo: true, hold: 200 });
   });
 
-  this.time.delayedCall(620, () => {
+  this.time.delayedCall(360, () => {
+    const hpScale = Math.floor(attacker.maxHp * 0.28);
+    const previewDamage = Phaser.Math.Between(attacker.atk + hpScale - 3, attacker.atk + hpScale + 4);
+    dmgText.setText(`-${Math.max(1, previewDamage)}`);
+    this.playSfx(this.sfxHit);
+    this.tweens.add({ targets: dmgText, alpha: 1, scale: { from: 2.2, to: 1 }, duration: 220, yoyo: true });
+    this.tweens.add({ targets: [targetFrame, targetAvatar, targetIcon, tBar, tHpText], x: '-=20', duration: 60, yoyo: true, repeat: 4 });
+  });
+
+  this.time.delayedCall(960, () => {
     this.tweens.add({
       targets: overlay,
       alpha: 0,
-      duration: 120,
+      duration: 180,
       onComplete: () => {
         overlay.destroy(true);
         if (onDone) onDone();
