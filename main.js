@@ -195,6 +195,48 @@ const UNIT_DEFS = {
   }
 };
 
+
+
+const MAP_SIZES = [
+  { cols: 8, rows: 6 },
+  { cols: 9, rows: 6 },
+  { cols: 10, rows: 7 },
+  { cols: 9, rows: 7 },
+  { cols: 11, rows: 7 },
+  { cols: 12, rows: 8 }
+];
+
+const TERRAIN_TYPES = {
+  grass: { name: 'Grass', colorA: 0x2f4d34, colorB: 0x28412d, atk: 0, def: 0, moveCost: 1 },
+  road: { name: 'Road', colorA: 0x5d5448, colorB: 0x4d463d, atk: 0, def: -1, moveCost: 1 },
+  forest: { name: 'Forest', colorA: 0x1f3a24, colorB: 0x1a321f, atk: 1, def: 2, moveCost: 2 },
+  rock: { name: 'Rock', colorA: 0x4d4f57, colorB: 0x3f4149, atk: 0, def: 3, moveCost: 2 },
+  town: { name: 'Town', colorA: 0x5e3f35, colorB: 0x4e342d, atk: 1, def: 1, moveCost: 1 },
+  sand: { name: 'Sand', colorA: 0x746645, colorB: 0x65583c, atk: -1, def: 0, moveCost: 2 },
+  water: { name: 'Water', colorA: 0x21496a, colorB: 0x183c57, atk: -2, def: -1, moveCost: 99 }
+};
+
+const SKILLS = {
+  berserkerRage: { name: 'Berserker Rage', hits: 5, power: 0.34, buff: { atk: 3, turns: 2 } },
+  ruinCleave: { name: 'Ruin Cleave', hits: 3, power: 0.5, aoe: 0.32, cooldown: 2 },
+  knightGuard: { name: 'Aegis Rush', hits: 2, power: 0.58, buff: { def: 2, turns: 2 }, cooldown: 2 },
+  hexVolley: { name: 'Hex Volley', hits: 4, power: 0.33, ignoreDef: true, cooldown: 2 },
+  zombieGnaw: { name: 'Gnaw Frenzy', hits: 3, power: 0.3, lifesteal: 0.25 },
+  skeletonBarrage: { name: 'Bone Barrage', hits: 2, power: 0.52, debuff: { def: -1, turns: 2 } },
+  darkNova: { name: 'Dark Nova', hits: 6, power: 0.32, ignoreDef: true, cooldown: 2 }
+};
+
+const UNIT_SKILL_SETS = {
+  dzeko: ['berserkerRage', 'ruinCleave'],
+  kael: ['knightGuard'],
+  aria: ['hexVolley'],
+  zombie: ['zombieGnaw'],
+  skeleton: ['skeletonBarrage'],
+  boneHerald: ['skeletonBarrage'],
+  vorn: ['knightGuard', 'skeletonBarrage'],
+  malzar: ['darkNova']
+};
+
 const config = {
   type: Phaser.AUTO,
   parent: 'game-container',
@@ -239,7 +281,7 @@ BattleScene.prototype.create = function create() {
 
   this.createBackground();
   if (typeof window !== 'undefined') window.__darkbreakerScene = this;
-  this.createGrid();
+  this.terrainMap = [];
   this.createHud();
   this.createFx();
   this.initAudio();
@@ -273,6 +315,13 @@ BattleScene.prototype.createBackground = function createBackground() {
 };
 
 BattleScene.prototype.createGrid = function createGrid() {
+  if (this.gridContainer) {
+    this.gridContainer.destroy(true);
+  }
+  if (this.cursor) {
+    this.cursor.destroy();
+  }
+
   this.gridContainer = this.add.container(0, 0);
   this.tileRects = [];
 
@@ -282,21 +331,31 @@ BattleScene.prototype.createGrid = function createGrid() {
       const px = this.origin.x + x * this.tileSize;
       const py = this.origin.y + y * this.tileSize;
 
-      const tint = (x + y) % 2 === 0 ? 0x1a1f2f : 0x131728;
+      const terrainId = this.getTerrainAt(x, y);
+      const terrain = TERRAIN_TYPES[terrainId] || TERRAIN_TYPES.grass;
+      const tint = (x + y) % 2 === 0 ? terrain.colorA : terrain.colorB;
+
       const tile = this.add.rectangle(px, py, this.tileSize - 2, this.tileSize - 2, tint).setOrigin(0);
-      tile.setStrokeStyle(1, 0x2e3a58, 0.9);
+      tile.setStrokeStyle(1, 0x2e3a58, 0.75);
       tile.setInteractive();
       tile.gridX = x;
       tile.gridY = y;
       tile.on('pointerdown', () => this.onTileClicked(x, y));
 
-      this.gridContainer.add(tile);
+      const glyphByTerrain = { forest: 'F', road: 'R', rock: 'M', town: 'T', water: 'W', sand: 'S', grass: '' };
+      const glyph = this.add.text(px + 6, py + 4, glyphByTerrain[terrainId] || '', { fontSize: `${Math.max(10, Math.floor(this.tileSize * 0.18))}px`, color: '#d7def4aa' });
+
+      this.gridContainer.add([tile, glyph]);
       this.tileRects[y][x] = tile;
     }
   }
 
-  this.cursor = this.add.rectangle(0, 0, this.tileSize - 4, this.tileSize - 4).setOrigin(0).setStrokeStyle(2, 0x90b7ff, 0.8).setVisible(false);
+  this.cursor = this.add.rectangle(0, 0, this.tileSize - 4, this.tileSize - 4)
+    .setOrigin(0)
+    .setStrokeStyle(2, 0x90b7ff, 0.8)
+    .setVisible(false);
 };
+
 
 BattleScene.prototype.createHud = function createHud() {
   const panelX = 760;
@@ -380,6 +439,94 @@ BattleScene.prototype.playSfx = function playSfx(soundRef) {
   }
 };
 
+BattleScene.prototype.configureMapGeometry = function configureMapGeometry(index) {
+  const size = MAP_SIZES[index] || MAP_SIZES[MAP_SIZES.length - 1];
+  this.cols = size.cols;
+  this.rows = size.rows;
+
+  const maxBoardW = 680;
+  const maxBoardH = 520;
+  this.tileSize = Math.floor(Math.min(maxBoardW / this.cols, maxBoardH / this.rows));
+  this.tileSize = Phaser.Math.Clamp(this.tileSize, 52, 84);
+  this.origin = {
+    x: 70,
+    y: Math.floor((560 - this.rows * this.tileSize) / 2) + 44
+  };
+};
+
+BattleScene.prototype.generateTerrainMap = function generateTerrainMap(index) {
+  const terrainKeys = ['grass', 'grass', 'grass', 'road', 'forest', 'rock', 'town', 'sand', 'water'];
+  const map = [];
+  for (let y = 0; y < this.rows; y += 1) {
+    map[y] = [];
+    for (let x = 0; x < this.cols; x += 1) {
+      let t = terrainKeys[(x * 7 + y * 5 + index * 3 + Phaser.Math.Between(0, 8)) % terrainKeys.length];
+      if (x === 0 || x === 1) t = (y % 2 === 0) ? 'road' : 'grass';
+      if (x >= this.cols - 2) t = (y % 3 === 0) ? 'forest' : t;
+      map[y][x] = t;
+    }
+  }
+
+  if (index >= 2) {
+    const riverY = Math.floor(this.rows / 2);
+    for (let x = 2; x < this.cols - 2; x += 1) {
+      map[riverY][x] = (x % 2 === 0) ? 'water' : 'sand';
+    }
+  }
+
+  this.terrainMap = map;
+};
+
+BattleScene.prototype.getTerrainAt = function getTerrainAt(x, y) {
+  if (!this.terrainMap[y] || !this.terrainMap[y][x]) return 'grass';
+  return this.terrainMap[y][x];
+};
+
+BattleScene.prototype.getTerrainStats = function getTerrainStats(unit) {
+  const terrainId = this.getTerrainAt(unit.x, unit.y);
+  const terrain = TERRAIN_TYPES[terrainId] || TERRAIN_TYPES.grass;
+  return { id: terrainId, ...terrain };
+};
+
+BattleScene.prototype.tickBuffs = function tickBuffs(units) {
+  units.forEach((unit) => {
+    unit.buffs = (unit.buffs || []).filter((b) => {
+      b.turns -= 1;
+      return b.turns > 0;
+    });
+  });
+};
+
+BattleScene.prototype.getUnitBuffValue = function getUnitBuffValue(unit, key) {
+  return (unit.buffs || []).reduce((sum, buff) => sum + (buff[key] || 0), 0);
+};
+
+BattleScene.prototype.chooseSkill = function chooseSkill(attacker) {
+  const set = UNIT_SKILL_SETS[attacker.id] || [];
+  if (!set.length) return { id: 'basic', name: 'Basic Strike', hits: 1, power: 1 };
+
+  attacker.skillCooldowns = attacker.skillCooldowns || {};
+
+  for (let i = 0; i < set.length; i += 1) {
+    const id = set[i];
+    const cd = attacker.skillCooldowns[id] || 0;
+    if (cd <= 0) {
+      const skill = { id, ...SKILLS[id] };
+      if (skill.cooldown) attacker.skillCooldowns[id] = skill.cooldown;
+      return skill;
+    }
+  }
+
+  return { id: 'basic', name: 'Basic Strike', hits: 1, power: 1 };
+};
+
+BattleScene.prototype.reduceCooldowns = function reduceCooldowns(unit) {
+  if (!unit.skillCooldowns) return;
+  Object.keys(unit.skillCooldowns).forEach((k) => {
+    unit.skillCooldowns[k] = Math.max(0, unit.skillCooldowns[k] - 1);
+  });
+};
+
 BattleScene.prototype.loadMap = function loadMap(index) {
   this.clearHighlights();
   this.clearUnits();
@@ -389,6 +536,10 @@ BattleScene.prototype.loadMap = function loadMap(index) {
   const map = CAMPAIGN[index];
   this.currentMap = map;
 
+  this.configureMapGeometry(index);
+  this.generateTerrainMap(index);
+  this.createGrid();
+
   if (map.join && !GAME_STATE.roster.includes(map.join)) {
     GAME_STATE.roster.push(map.join);
   }
@@ -397,18 +548,22 @@ BattleScene.prototype.loadMap = function loadMap(index) {
   activeRoster.forEach((id) => {
     const spawn = map.playerSpawns.find((s) => s.id === id);
     const existing = this.getPersistentUnit(id);
-    const unit = this.createUnit(id, spawn.x, spawn.y, 'player', existing);
+    const sx = Phaser.Math.Clamp(spawn.x, 0, this.cols - 1);
+    const sy = Phaser.Math.Clamp(spawn.y, 0, this.rows - 1);
+    const unit = this.createUnit(id, sx, sy, 'player', existing);
     this.playerUnits.push(unit);
     this.units.push(unit);
   });
 
   map.enemies.forEach((enemy) => {
-    const unit = this.createUnit(enemy.type, enemy.x, enemy.y, 'enemy');
+    const ex = Phaser.Math.Clamp(enemy.x, 0, this.cols - 1);
+    const ey = Phaser.Math.Clamp(enemy.y, 0, this.rows - 1);
+    const unit = this.createUnit(enemy.type, ex, ey, 'enemy');
     this.enemyUnits.push(unit);
     this.units.push(unit);
   });
 
-  this.mapText.setText(map.name);
+  this.mapText.setText(`${map.name} (${this.cols}x${this.rows})`);
   this.objectiveText.setText(`Objective: ${map.objective}`);
   this.storyText.setText(map.story);
   this.turnText.setText('Turn: Player');
@@ -416,6 +571,7 @@ BattleScene.prototype.loadMap = function loadMap(index) {
 
   this.showDialog(this.getIntroDialog(map));
 };
+
 
 BattleScene.prototype.getPersistentUnit = function getPersistentUnit(id) {
   if (!GAME_STATE.unitProgress) GAME_STATE.unitProgress = {};
@@ -429,7 +585,8 @@ BattleScene.prototype.savePersistentUnits = function savePersistentUnits() {
       level: u.level,
       xp: u.xp,
       maxHp: u.maxHp,
-      atk: u.atk
+      atk: u.atk,
+      def: u.def
     };
   });
 };
@@ -450,11 +607,15 @@ BattleScene.prototype.createUnit = function createUnit(id, x, y, side, persisted
     level: persisted?.level || 1,
     xp: persisted?.xp || 0,
     atk: persisted?.atk || def.atk,
+    def: persisted?.def || def.def || 2,
     maxHp: persisted?.maxHp || def.maxHp,
     hp: persisted?.maxHp || def.maxHp,
     portrait: def.portrait,
     color: def.color,
     accent: def.accent,
+    perks: def.perks || [],
+    buffs: [],
+    skillCooldowns: {},
     sprite: null,
     hpText: null,
     aura: null
@@ -553,18 +714,22 @@ BattleScene.prototype.selectUnit = function selectUnit(unit) {
   }
   this.highlightAttackTargets(unit);
 
+  const terrain = this.getTerrainStats(unit);
+  const skills = (UNIT_SKILL_SETS[unit.id] || ['basic']).map((id) => SKILLS[id]?.name || 'Basic Strike').join(', ');
   this.unitInfo.setText([
     `${unit.portrait} ${unit.name} (${unit.className})`,
     `HP ${unit.hp}/${unit.maxHp}`,
-    `ATK ${unit.atk}  MOV ${unit.move}  RNG ${unit.range}`,
+    `ATK ${unit.atk}  DEF ${unit.def}  MOV ${unit.move}  RNG ${unit.range}`,
     `LV ${unit.level}  XP ${unit.xp}/100`,
-    unit.id === 'dzeko' && unit.level >= 2 ? 'Skill: Ruin Cleave (AoE splash)' : 'Skill: Basic Brutal Strike',
+    `Tile: ${terrain.name}  ATK ${terrain.atk >= 0 ? '+' : ''}${terrain.atk} DEF ${terrain.def >= 0 ? '+' : ''}${terrain.def}`,
+    `Skills: ${skills}`,
     unit.moved ? 'Status: Moved (can still attack if in range)' : 'Status: Ready'
   ]);
 
   const pixel = this.gridToPixel(unit.x, unit.y);
   this.cursor.setPosition(pixel.x + 2, pixel.y + 2).setVisible(true);
 };
+
 
 BattleScene.prototype.showMoveHighlights = function showMoveHighlights(unit) {
   const tiles = this.getWalkableTiles(unit);
@@ -593,17 +758,41 @@ BattleScene.prototype.clearHighlights = function clearHighlights() {
 };
 
 BattleScene.prototype.getWalkableTiles = function getWalkableTiles(unit) {
-  const tiles = [];
-  for (let y = 0; y < this.rows; y += 1) {
-    for (let x = 0; x < this.cols; x += 1) {
-      const dist = Math.abs(unit.x - x) + Math.abs(unit.y - y);
-      if (dist > 0 && dist <= unit.move && !this.getUnitAt(x, y)) {
-        tiles.push({ x, y });
+  const reachable = [];
+  const visited = new Map();
+  const queue = [{ x: unit.x, y: unit.y, cost: 0 }];
+  visited.set(`${unit.x},${unit.y}`, 0);
+
+  while (queue.length) {
+    const node = queue.shift();
+    const neighbors = [
+      { x: node.x + 1, y: node.y },
+      { x: node.x - 1, y: node.y },
+      { x: node.x, y: node.y + 1 },
+      { x: node.x, y: node.y - 1 }
+    ];
+
+    neighbors.forEach((n) => {
+      if (n.x < 0 || n.y < 0 || n.x >= this.cols || n.y >= this.rows) return;
+      const terrain = TERRAIN_TYPES[this.getTerrainAt(n.x, n.y)] || TERRAIN_TYPES.grass;
+      if (terrain.moveCost >= 99 && !unit.perks.includes('amphibious')) return;
+      if (this.getUnitAt(n.x, n.y)) return;
+
+      const nextCost = node.cost + terrain.moveCost;
+      const key = `${n.x},${n.y}`;
+      const prev = visited.get(key);
+
+      if (nextCost <= unit.move && (prev === undefined || nextCost < prev)) {
+        visited.set(key, nextCost);
+        queue.push({ x: n.x, y: n.y, cost: nextCost });
+        reachable.push({ x: n.x, y: n.y });
       }
-    }
+    });
   }
-  return tiles;
+
+  return reachable;
 };
+
 
 BattleScene.prototype.isInRange = function isInRange(attacker, target) {
   const dist = Math.abs(attacker.x - target.x) + Math.abs(attacker.y - target.y);
@@ -653,8 +842,10 @@ BattleScene.prototype.performAttack = function performAttack(attacker, target, o
     if (finalized) return;
     finalized = true;
 
+    const skill = this.chooseSkill(attacker);
+
     let impactResolved = false;
-    const resolveImpact = () => {
+    const resolveImpact = (previewTotal = null) => {
       if (impactResolved) return;
       impactResolved = true;
 
@@ -670,30 +861,41 @@ BattleScene.prototype.performAttack = function performAttack(attacker, target, o
           this.bloodParticles.emitParticleAt(end.x, end.y, 26);
         }
 
-        // SRW-like big damage scaling: heavy units hit harder.
-        const hpScale = Math.floor(attacker.maxHp * 0.28);
-        const dmg = Phaser.Math.Between(attacker.atk + hpScale - 3, attacker.atk + hpScale + 4);
-        this.applyDamage(attacker, target, Math.max(1, dmg));
+        const result = this.calculateSkillDamage(attacker, target, skill, previewTotal);
+        this.applyDamage(attacker, target, result.totalDamage);
 
-        if (attacker.id === 'dzeko' && attacker.level >= 2) {
-          this.applyCleaveSplash(attacker, target);
+        if (skill.aoe && attacker.side === 'player') {
+          this.applyCleaveSplash(attacker, target, skill.aoe);
+        }
+
+        if (skill.buff) {
+          attacker.buffs.push({ atk: skill.buff.atk || 0, def: skill.buff.def || 0, turns: skill.buff.turns || 1 });
+        }
+        if (skill.debuff && target.hp > 0) {
+          target.buffs.push({ atk: skill.debuff.atk || 0, def: skill.debuff.def || 0, turns: skill.debuff.turns || 1 });
+        }
+        if (skill.lifesteal) {
+          const heal = Math.max(1, Math.floor(result.totalDamage * skill.lifesteal));
+          attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal);
+          attacker.hpText.setText(`${attacker.hp}`);
         }
       } catch (err) {
         console.error('Attack resolution error:', err);
       }
 
+      this.reduceCooldowns(attacker);
       this.processing = false;
       if (onDone) onDone();
     };
 
     try {
-      this.playSuperRobotWarsSequence(attacker, target, resolveImpact);
+      this.playSuperRobotWarsSequence(attacker, target, skill, resolveImpact);
     } catch (err) {
       console.error('SRW cinematic error:', err);
       resolveImpact();
     }
 
-    this.time.delayedCall(1700, resolveImpact);
+    this.time.delayedCall(1900, () => resolveImpact());
   };
 
   this.tweens.add({
@@ -730,7 +932,34 @@ BattleScene.prototype.performAttack = function performAttack(attacker, target, o
   this.time.delayedCall(560, finalizeAttack);
 };
 
-BattleScene.prototype.playSuperRobotWarsSequence = function playSuperRobotWarsSequence(attacker, target, onDone) {
+BattleScene.prototype.calculateSkillDamage = function calculateSkillDamage(attacker, target, skill, previewTotal = null) {
+  if (previewTotal !== null) {
+    return { totalDamage: previewTotal };
+  }
+
+  const atkTerrain = this.getTerrainStats(attacker);
+  const defTerrain = this.getTerrainStats(target);
+
+  const atkBuff = this.getUnitBuffValue(attacker, 'atk');
+  const defBuff = this.getUnitBuffValue(target, 'def');
+
+  const attackValue = attacker.atk + atkBuff + atkTerrain.atk + Math.floor(attacker.maxHp * 0.14);
+  const defenseValue = skill.ignoreDef ? 0 : Math.max(0, target.def + defBuff + defTerrain.def);
+
+  let total = 0;
+  for (let i = 0; i < (skill.hits || 1); i += 1) {
+    const strike = Math.max(1, Math.floor(attackValue * (skill.power || 1)) - Math.floor(defenseValue * 0.65) + Phaser.Math.Between(-2, 4));
+    total += strike;
+  }
+
+  if (target.perks && target.perks.includes('undeadResist')) {
+    total = Math.floor(total * 0.9);
+  }
+
+  return { totalDamage: Math.max(1, total) };
+};
+
+BattleScene.prototype.playSuperRobotWarsSequence = function playSuperRobotWarsSequence(attacker, target, skill, onDone) {
   const overlay = this.add.container(380, 320).setDepth(3500);
 
   const veil = this.add.rectangle(0, 0, 760, 640, 0x020308, 0.94);
@@ -748,12 +977,6 @@ BattleScene.prototype.playSuperRobotWarsSequence = function playSuperRobotWarsSe
   const attackerFrame = this.add.rectangle(-230, 4, 320, 270, 0x1a2544, 0.96).setStrokeStyle(4, 0x8ab0ff, 0.9);
   const targetFrame = this.add.rectangle(230, -4, 320, 270, 0x40192c, 0.96).setStrokeStyle(4, 0xff8da6, 0.9);
 
-  const attackerAvatar = this.add.circle(-230, 6, 84, 0x2a385f, 1).setStrokeStyle(5, 0xafc8ff, 0.9);
-  const targetAvatar = this.add.circle(230, -2, 84, 0x5d2539, 1).setStrokeStyle(5, 0xffadbf, 0.9);
-
-  const attackerIcon = this.add.text(-230, 6, attacker.portrait, { fontSize: '72px' }).setOrigin(0.5);
-  const targetIcon = this.add.text(230, -2, target.portrait, { fontSize: '72px' }).setOrigin(0.5);
-
   const attackerName = this.add.text(-365, -110, `${attacker.name} • ${attacker.className}`, { fontSize: '24px', color: '#e8efff', fontStyle: 'bold' });
   const targetName = this.add.text(86, 92, `${target.name} • ${target.className}`, { fontSize: '24px', color: '#ffe9ee', fontStyle: 'bold' });
 
@@ -765,72 +988,110 @@ BattleScene.prototype.playSuperRobotWarsSequence = function playSuperRobotWarsSe
   const aBar = this.add.rectangle(-230 - (maxBarW * (1 - aHpRatio)) / 2, 112, maxBarW * aHpRatio, 14, 0x52a9ff, 1);
   const tBar = this.add.rectangle(230 - (maxBarW * (1 - tHpRatio)) / 2, -112, maxBarW * tHpRatio, 14, 0xff5f78, 1);
 
-  const aHpText = this.add.text(-348, 128, `HP ${attacker.hp.toString().padStart(4, '0')} / ${attacker.maxHp.toString().padStart(4, '0')}`, { fontSize: '18px', color: '#b8d4ff' });
-  const tHpText = this.add.text(102, -96, `HP ${target.hp.toString().padStart(4, '0')} / ${target.maxHp.toString().padStart(4, '0')}`, { fontSize: '18px', color: '#ffbecb' });
+  const skillText = this.add.text(0, -58, skill.name || 'Basic Strike', {
+    fontSize: '30px', color: '#fff3b8', fontStyle: 'bold', stroke: '#290000', strokeThickness: 7
+  }).setOrigin(0.5).setAlpha(0);
 
   const clash = this.add.text(0, -8, 'FULL BURST', {
-    fontSize: '58px',
-    color: '#ffffff',
-    fontStyle: 'bold',
-    stroke: '#2b0000',
-    strokeThickness: 9
+    fontSize: '58px', color: '#ffffff', fontStyle: 'bold', stroke: '#2b0000', strokeThickness: 9
   }).setOrigin(0.5).setAlpha(0);
 
   const dmgText = this.add.text(230, -6, '', {
-    fontSize: '78px',
-    color: '#ffec7a',
-    fontStyle: 'bold',
-    stroke: '#3a0000',
-    strokeThickness: 10
+    fontSize: '78px', color: '#ffec7a', fontStyle: 'bold', stroke: '#3a0000', strokeThickness: 10
   }).setOrigin(0.5).setAlpha(0);
+
+  const attackerModel = this.add.graphics({ x: -230, y: 4 });
+  const targetModel = this.add.graphics({ x: 230, y: -4 });
+
+  const drawStick = (g, body, accent, weapon = false) => {
+    g.clear();
+    g.lineStyle(6, body, 1);
+    g.strokeCircle(0, -62, 18);
+    g.beginPath(); g.moveTo(0, -44); g.lineTo(0, 22); g.strokePath();
+    g.beginPath(); g.moveTo(0, -20); g.lineTo(-28, 8); g.strokePath();
+    g.beginPath(); g.moveTo(0, -20); g.lineTo(28, 8); g.strokePath();
+    g.beginPath(); g.moveTo(0, 22); g.lineTo(-20, 56); g.strokePath();
+    g.beginPath(); g.moveTo(0, 22); g.lineTo(20, 56); g.strokePath();
+    g.lineStyle(4, accent, 1);
+    g.strokeCircle(0, -62, 22);
+    if (weapon) {
+      g.lineStyle(7, 0xdadfff, 1);
+      g.beginPath(); g.moveTo(30, 8); g.lineTo(84, -24); g.strokePath();
+    }
+  };
+
+  drawStick(attackerModel, 0xe7ecff, 0x7ea8ff, attacker.id === 'dzeko' || attacker.id === 'kael');
+  drawStick(targetModel, 0xffd9df, 0xff93a9, target.id !== 'zombie');
 
   overlay.add([
     veil, streaks, upperBand, lowerBand,
-    attackerFrame, targetFrame, attackerAvatar, targetAvatar,
-    attackerIcon, targetIcon, attackerName, targetName,
-    aBarBg, tBarBg, aBar, tBar, aHpText, tHpText,
-    clash, dmgText
+    attackerFrame, targetFrame,
+    attackerName, targetName,
+    aBarBg, tBarBg, aBar, tBar,
+    attackerModel, targetModel,
+    skillText, clash, dmgText
   ]);
 
-  this.tweens.add({ targets: streaks, x: 44, yoyo: true, repeat: -1, duration: 190, ease: 'Linear' });
+  this.tweens.add({ targets: streaks, x: 46, yoyo: true, repeat: -1, duration: 170, ease: 'Linear' });
   this.tweens.add({ targets: [upperBand, lowerBand], y: '-=88', duration: 170, ease: 'Sine.easeOut' });
-  this.tweens.add({ targets: [attackerFrame, attackerAvatar, attackerIcon, attackerName, aBarBg, aBar, aHpText], x: '+=120', duration: 190, ease: 'Cubic.easeOut' });
-  this.tweens.add({ targets: [targetFrame, targetAvatar, targetIcon, targetName, tBarBg, tBar, tHpText], x: '-=120', duration: 190, ease: 'Cubic.easeOut' });
+  this.tweens.add({ targets: [attackerFrame, attackerName, aBarBg, aBar, attackerModel], x: '+=120', duration: 190, ease: 'Cubic.easeOut' });
+  this.tweens.add({ targets: [targetFrame, targetName, tBarBg, tBar, targetModel], x: '-=120', duration: 190, ease: 'Cubic.easeOut' });
 
-  this.time.delayedCall(170, () => {
-    this.tweens.add({ targets: clash, alpha: 1, scale: { from: 1.35, to: 1 }, duration: 180, yoyo: true, hold: 200 });
+  this.time.delayedCall(150, () => {
+    this.tweens.add({ targets: [clash, skillText], alpha: 1, scale: { from: 1.3, to: 1 }, duration: 180, yoyo: true, hold: 220 });
   });
 
-  this.time.delayedCall(360, () => {
-    const hpScale = Math.floor(attacker.maxHp * 0.28);
-    const previewDamage = Phaser.Math.Between(attacker.atk + hpScale - 3, attacker.atk + hpScale + 4);
-    dmgText.setText(`-${Math.max(1, previewDamage)}`);
+  const swings = Math.min(8, Math.max(2, skill.hits || 1));
+  for (let i = 0; i < swings; i += 1) {
+    this.time.delayedCall(320 + i * 90, () => {
+      this.playSfx(this.sfxSlash);
+      this.tweens.add({
+        targets: attackerModel,
+        angle: attacker.id === 'dzeko' ? Phaser.Math.Between(-45, 50) : Phaser.Math.Between(-25, 25),
+        x: '+=22',
+        yoyo: true,
+        duration: 70,
+        repeat: 1
+      });
+      this.tweens.add({
+        targets: targetModel,
+        x: (target.id === 'zombie') ? '-=14' : '-=10',
+        y: (target.id === 'zombie') ? '+=6' : '-=4',
+        duration: 60,
+        yoyo: true,
+        repeat: 1
+      });
+    });
+  }
+
+  this.time.delayedCall(470, () => {
+    const preview = this.calculateSkillDamage(attacker, target, skill).totalDamage;
+    dmgText.setText(`-${preview}`);
     this.playSfx(this.sfxHit);
-    this.tweens.add({ targets: dmgText, alpha: 1, scale: { from: 2.2, to: 1 }, duration: 220, yoyo: true });
-    this.tweens.add({ targets: [targetFrame, targetAvatar, targetIcon, tBar, tHpText], x: '-=20', duration: 60, yoyo: true, repeat: 4 });
+    this.tweens.add({ targets: dmgText, alpha: 1, scale: { from: 2.3, to: 1 }, duration: 240, yoyo: true });
   });
 
-  this.time.delayedCall(960, () => {
+  this.time.delayedCall(1220, () => {
     this.tweens.add({
       targets: overlay,
       alpha: 0,
-      duration: 180,
+      duration: 190,
       onComplete: () => {
         overlay.destroy(true);
-        if (onDone) onDone();
+        if (onDone) onDone(this.calculateSkillDamage(attacker, target, skill).totalDamage);
       }
     });
   });
 };
 
 
-BattleScene.prototype.applyCleaveSplash = function applyCleaveSplash(attacker, primaryTarget) {
+BattleScene.prototype.applyCleaveSplash = function applyCleaveSplash(attacker, primaryTarget, ratio = 0.35) {
   this.enemyUnits
     .filter((enemy) => enemy !== primaryTarget)
     .forEach((enemy) => {
       const dist = Math.abs(enemy.x - primaryTarget.x) + Math.abs(enemy.y - primaryTarget.y);
       if (dist === 1) {
-        this.applyDamage(attacker, enemy, Math.floor(attacker.atk * 0.35));
+        this.applyDamage(attacker, enemy, Math.floor(attacker.atk * ratio));
       }
     });
 };
@@ -929,6 +1190,8 @@ BattleScene.prototype.afterPlayerAction = function afterPlayerAction(unit) {
 BattleScene.prototype.startEnemyTurn = function startEnemyTurn() {
   if (this.processing || this.turn !== 'player') return;
 
+  this.tickBuffs(this.enemyUnits);
+  this.enemyUnits.forEach((u) => this.reduceCooldowns(u));
   this.turn = 'enemy';
   this.turnText.setText('Turn: Enemy');
   this.processing = true;
@@ -1031,7 +1294,8 @@ BattleScene.prototype.getStepTowards = function getStepTowards(unit, target) {
 BattleScene.prototype.startPlayerTurn = function startPlayerTurn() {
   this.turn = 'player';
   this.turnText.setText('Turn: Player');
-  this.playerUnits.forEach((u) => { u.acted = false; u.moved = false; });
+  this.tickBuffs(this.playerUnits);
+  this.playerUnits.forEach((u) => { u.acted = false; u.moved = false; this.reduceCooldowns(u); });
   this.checkBattleState();
 };
 
