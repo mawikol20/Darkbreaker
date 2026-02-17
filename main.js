@@ -653,30 +653,39 @@ BattleScene.prototype.performAttack = function performAttack(attacker, target, o
     if (finalized) return;
     finalized = true;
 
+    const resolveImpact = () => {
+      try {
+        this.flash.setFillStyle(0xffffff, 0.32);
+        this.tweens.add({ targets: this.flash, alpha: 0.01, duration: 180 });
+
+        this.playSfx(this.sfxHit);
+        this.cameras.main.shake(180, 0.009);
+        if (this.bloodParticles && typeof this.bloodParticles.explode === 'function') {
+          this.bloodParticles.explode(16, end.x, end.y);
+        } else if (this.bloodParticles && typeof this.bloodParticles.emitParticleAt === 'function') {
+          this.bloodParticles.emitParticleAt(end.x, end.y, 16);
+        }
+
+        const dmg = Phaser.Math.Between(attacker.atk - 2, attacker.atk + 2);
+        this.applyDamage(attacker, target, dmg);
+
+        if (attacker.id === 'dzeko' && attacker.level >= 2) {
+          this.applyCleaveSplash(attacker, target);
+        }
+      } catch (err) {
+        console.error('Attack resolution error:', err);
+      }
+
+      this.processing = false;
+      if (onDone) onDone();
+    };
+
     try {
-      this.flash.setFillStyle(0xffffff, 0.32);
-      this.tweens.add({ targets: this.flash, alpha: 0.01, duration: 180 });
-
-      this.playSfx(this.sfxHit);
-      this.cameras.main.shake(160, 0.008);
-      if (this.bloodParticles && typeof this.bloodParticles.explode === 'function') {
-        this.bloodParticles.explode(12, end.x, end.y);
-      } else if (this.bloodParticles && typeof this.bloodParticles.emitParticleAt === 'function') {
-        this.bloodParticles.emitParticleAt(end.x, end.y, 12);
-      }
-
-      const dmg = Phaser.Math.Between(attacker.atk - 2, attacker.atk + 2);
-      this.applyDamage(attacker, target, dmg);
-
-      if (attacker.id === 'dzeko' && attacker.level >= 2) {
-        this.applyCleaveSplash(attacker, target);
-      }
+      this.playDuelCinematic(attacker, target, resolveImpact);
     } catch (err) {
-      console.error('Attack resolution error:', err);
+      console.error('Cinematic error:', err);
+      resolveImpact();
     }
-
-    this.processing = false;
-    if (onDone) onDone();
   };
 
   this.tweens.add({
@@ -710,7 +719,59 @@ BattleScene.prototype.performAttack = function performAttack(attacker, target, o
     onComplete: finalizeAttack
   });
 
-  this.time.delayedCall(520, finalizeAttack);
+  this.time.delayedCall(560, finalizeAttack);
+};
+
+BattleScene.prototype.playDuelCinematic = function playDuelCinematic(attacker, target, onDone) {
+  const overlay = this.add.container(380, 320).setDepth(2400);
+
+  const back = this.add.rectangle(0, 0, 760, 640, 0x000000, 0.68);
+  const top = this.add.rectangle(0, -270, 760, 170, 0x070912, 0.97);
+  const bottom = this.add.rectangle(0, 270, 760, 170, 0x070912, 0.97);
+
+  const leftColor = attacker.side === 'player' ? 0x2b3556 : 0x5a2e3b;
+  const rightColor = target.side === 'player' ? 0x2b3556 : 0x5a2e3b;
+
+  const leftPanel = this.add.rectangle(-520, -28, 330, 230, leftColor, 0.92).setStrokeStyle(3, 0x95b5ff, 0.65);
+  const rightPanel = this.add.rectangle(520, 28, 330, 230, rightColor, 0.92).setStrokeStyle(3, 0xff8a9e, 0.65);
+
+  const leftName = this.add.text(-610, -88, `${attacker.portrait} ${attacker.name}`, { fontSize: '28px', color: '#f1f4ff', fontStyle: 'bold' });
+  const leftClass = this.add.text(-610, -44, attacker.className, { fontSize: '16px', color: '#d4defa' });
+  const rightName = this.add.text(360, 8, `${target.portrait} ${target.name}`, { fontSize: '28px', color: '#ffeef1', fontStyle: 'bold' });
+  const rightClass = this.add.text(360, 52, target.className, { fontSize: '16px', color: '#f0d1d9' });
+
+  const vsText = this.add.text(0, -10, 'CLASH', { fontSize: '52px', color: '#ffffff', fontStyle: 'bold', stroke: '#220000', strokeThickness: 8 }).setOrigin(0.5).setAlpha(0);
+  const slash = this.add.rectangle(0, 0, 640, 14, 0xffffff, 0).setAngle(-14).setBlendMode(Phaser.BlendModes.ADD);
+
+  overlay.add([back, top, bottom, leftPanel, rightPanel, leftName, leftClass, rightName, rightClass, vsText, slash]);
+
+  this.tweens.add({ targets: [top, bottom], y: '-=110', duration: 180, ease: 'Sine.easeOut' });
+  this.tweens.add({ targets: [leftPanel, leftName, leftClass], x: '+=350', duration: 220, ease: 'Cubic.easeOut' });
+  this.tweens.add({ targets: [rightPanel, rightName, rightClass], x: '-=350', duration: 220, ease: 'Cubic.easeOut' });
+  this.tweens.add({ targets: vsText, alpha: 1, scale: { from: 1.4, to: 1.0 }, duration: 150, yoyo: true, hold: 160 });
+
+  this.time.delayedCall(260, () => {
+    slash.setFillStyle(0xffffff, 0.9);
+    this.tweens.add({
+      targets: slash,
+      scaleX: { from: 0.15, to: 1.1 },
+      alpha: { from: 1, to: 0 },
+      duration: 220,
+      ease: 'Quad.easeOut'
+    });
+  });
+
+  this.time.delayedCall(620, () => {
+    this.tweens.add({
+      targets: overlay,
+      alpha: 0,
+      duration: 120,
+      onComplete: () => {
+        overlay.destroy(true);
+        if (onDone) onDone();
+      }
+    });
+  });
 };
 
 
