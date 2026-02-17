@@ -1000,42 +1000,106 @@ BattleScene.prototype.playSuperRobotWarsSequence = function playSuperRobotWarsSe
     fontSize: '78px', color: '#ffec7a', fontStyle: 'bold', stroke: '#3a0000', strokeThickness: 10
   }).setOrigin(0.5).setAlpha(0);
 
-  const attackerModel = this.add.graphics({ x: -230, y: 4 });
-  const targetModel = this.add.graphics({ x: 230, y: -4 });
+  const attackerRig = this.add.container(-230, 4);
+  const attackerBody = this.add.graphics();
+  const attackerWeapon = this.add.graphics();
+  attackerRig.add([attackerBody, attackerWeapon]);
 
-  const drawStick = (g, body, accent, weapon = false) => {
-    g.clear();
-    g.lineStyle(6, body, 1);
-    g.strokeCircle(0, -62, 18);
-    g.beginPath(); g.moveTo(0, -44); g.lineTo(0, 22); g.strokePath();
-    g.beginPath(); g.moveTo(0, -20); g.lineTo(-28, 8); g.strokePath();
-    g.beginPath(); g.moveTo(0, -20); g.lineTo(28, 8); g.strokePath();
-    g.beginPath(); g.moveTo(0, 22); g.lineTo(-20, 56); g.strokePath();
-    g.beginPath(); g.moveTo(0, 22); g.lineTo(20, 56); g.strokePath();
-    g.lineStyle(4, accent, 1);
-    g.strokeCircle(0, -62, 22);
-    if (weapon) {
-      g.lineStyle(7, 0xdadfff, 1);
-      g.beginPath(); g.moveTo(30, 8); g.lineTo(84, -24); g.strokePath();
+  const targetRig = this.add.container(230, -4);
+  const targetBody = this.add.graphics();
+  const targetWeapon = this.add.graphics();
+  targetRig.add([targetBody, targetWeapon]);
+
+  const drawRig = (bodyGfx, weaponGfx, options) => {
+    const {
+      bodyColor,
+      accent,
+      armAngle,
+      legSpread,
+      torsoLean,
+      weaponType,
+      weaponAngle,
+      headNod
+    } = options;
+
+    bodyGfx.clear();
+    weaponGfx.clear();
+
+    bodyGfx.lineStyle(6, bodyColor, 1);
+    bodyGfx.strokeCircle(0, -62 + headNod, 18);
+    bodyGfx.beginPath(); bodyGfx.moveTo(0, -44 + headNod); bodyGfx.lineTo(torsoLean, 22); bodyGfx.strokePath();
+
+    const armLen = 34;
+    const leftArmX = torsoLean + Math.cos((160 - armAngle) * Math.PI / 180) * armLen;
+    const leftArmY = -22 + Math.sin((160 - armAngle) * Math.PI / 180) * armLen;
+    const rightArmX = torsoLean + Math.cos((20 - armAngle) * Math.PI / 180) * armLen;
+    const rightArmY = -22 + Math.sin((20 - armAngle) * Math.PI / 180) * armLen;
+    bodyGfx.beginPath(); bodyGfx.moveTo(torsoLean, -20); bodyGfx.lineTo(leftArmX, leftArmY); bodyGfx.strokePath();
+    bodyGfx.beginPath(); bodyGfx.moveTo(torsoLean, -20); bodyGfx.lineTo(rightArmX, rightArmY); bodyGfx.strokePath();
+
+    bodyGfx.beginPath(); bodyGfx.moveTo(torsoLean, 22); bodyGfx.lineTo(-legSpread, 56); bodyGfx.strokePath();
+    bodyGfx.beginPath(); bodyGfx.moveTo(torsoLean, 22); bodyGfx.lineTo(legSpread, 56); bodyGfx.strokePath();
+
+    bodyGfx.lineStyle(4, accent, 1);
+    bodyGfx.strokeCircle(0, -62 + headNod, 22);
+
+    if (weaponType === 'greatsword') {
+      weaponGfx.lineStyle(8, 0xdadfff, 1);
+      weaponGfx.beginPath(); weaponGfx.moveTo(rightArmX, rightArmY); weaponGfx.lineTo(rightArmX + Math.cos(weaponAngle) * 72, rightArmY + Math.sin(weaponAngle) * 72); weaponGfx.strokePath();
+      weaponGfx.lineStyle(3, 0xa3adcf, 1);
+      weaponGfx.beginPath(); weaponGfx.moveTo(rightArmX + Math.cos(weaponAngle) * 72, rightArmY + Math.sin(weaponAngle) * 72); weaponGfx.lineTo(rightArmX + Math.cos(weaponAngle) * 88, rightArmY + Math.sin(weaponAngle) * 88); weaponGfx.strokePath();
+    } else if (weaponType === 'claws') {
+      weaponGfx.lineStyle(4, 0xf6d6d8, 1);
+      for (let i = -1; i <= 1; i += 1) {
+        const a = weaponAngle + i * 0.18;
+        weaponGfx.beginPath(); weaponGfx.moveTo(rightArmX, rightArmY); weaponGfx.lineTo(rightArmX + Math.cos(a) * 36, rightArmY + Math.sin(a) * 36); weaponGfx.strokePath();
+      }
     }
   };
 
-  drawStick(attackerModel, 0xe7ecff, 0x7ea8ff, attacker.id === 'dzeko' || attacker.id === 'kael');
-  drawStick(targetModel, 0xffd9df, 0xff93a9, target.id !== 'zombie');
+  const attackerAnim = { armAngle: 0, legSpread: 20, torsoLean: 0, weaponAngle: -0.75, headNod: 0 };
+  const targetAnim = { armAngle: 0, legSpread: 18, torsoLean: 0, weaponAngle: 2.9, headNod: 0 };
+
+  const attackerWeaponType = (attacker.id === 'dzeko' || attacker.id === 'kael') ? 'greatsword' : (attacker.id === 'zombie' ? 'claws' : 'greatsword');
+  const targetWeaponType = (target.id === 'zombie') ? 'claws' : 'greatsword';
+
+  const redrawModels = () => {
+    drawRig(attackerBody, attackerWeapon, {
+      bodyColor: 0xe7ecff,
+      accent: 0x7ea8ff,
+      armAngle: attackerAnim.armAngle,
+      legSpread: attackerAnim.legSpread,
+      torsoLean: attackerAnim.torsoLean,
+      weaponType: attackerWeaponType,
+      weaponAngle: attackerAnim.weaponAngle,
+      headNod: attackerAnim.headNod
+    });
+    drawRig(targetBody, targetWeapon, {
+      bodyColor: 0xffd9df,
+      accent: 0xff93a9,
+      armAngle: targetAnim.armAngle,
+      legSpread: targetAnim.legSpread,
+      torsoLean: targetAnim.torsoLean,
+      weaponType: targetWeaponType,
+      weaponAngle: targetAnim.weaponAngle,
+      headNod: targetAnim.headNod
+    });
+  };
+  redrawModels();
 
   overlay.add([
     veil, streaks, upperBand, lowerBand,
     attackerFrame, targetFrame,
     attackerName, targetName,
     aBarBg, tBarBg, aBar, tBar,
-    attackerModel, targetModel,
+    attackerRig, targetRig,
     skillText, clash, dmgText
   ]);
 
   this.tweens.add({ targets: streaks, x: 46, yoyo: true, repeat: -1, duration: 170, ease: 'Linear' });
   this.tweens.add({ targets: [upperBand, lowerBand], y: '-=88', duration: 170, ease: 'Sine.easeOut' });
-  this.tweens.add({ targets: [attackerFrame, attackerName, aBarBg, aBar, attackerModel], x: '+=120', duration: 190, ease: 'Cubic.easeOut' });
-  this.tweens.add({ targets: [targetFrame, targetName, tBarBg, tBar, targetModel], x: '-=120', duration: 190, ease: 'Cubic.easeOut' });
+  this.tweens.add({ targets: [attackerFrame, attackerName, aBarBg, aBar, attackerRig], x: '+=120', duration: 190, ease: 'Cubic.easeOut' });
+  this.tweens.add({ targets: [targetFrame, targetName, tBarBg, tBar, targetRig], x: '-=120', duration: 190, ease: 'Cubic.easeOut' });
 
   this.time.delayedCall(150, () => {
     this.tweens.add({ targets: [clash, skillText], alpha: 1, scale: { from: 1.3, to: 1 }, duration: 180, yoyo: true, hold: 220 });
@@ -1043,24 +1107,68 @@ BattleScene.prototype.playSuperRobotWarsSequence = function playSuperRobotWarsSe
 
   const swings = Math.min(8, Math.max(2, skill.hits || 1));
   for (let i = 0; i < swings; i += 1) {
-    this.time.delayedCall(320 + i * 90, () => {
+    this.time.delayedCall(320 + i * 100, () => {
       this.playSfx(this.sfxSlash);
-      this.tweens.add({
-        targets: attackerModel,
-        angle: attacker.id === 'dzeko' ? Phaser.Math.Between(-45, 50) : Phaser.Math.Between(-25, 25),
-        x: '+=22',
-        yoyo: true,
-        duration: 70,
-        repeat: 1
-      });
-      this.tweens.add({
-        targets: targetModel,
-        x: (target.id === 'zombie') ? '-=14' : '-=10',
-        y: (target.id === 'zombie') ? '+=6' : '-=4',
-        duration: 60,
-        yoyo: true,
-        repeat: 1
-      });
+
+      if (attackerWeaponType === 'greatsword') {
+        this.tweens.addCounter({
+          from: -1.2,
+          to: 0.9,
+          duration: 130,
+          ease: 'Cubic.easeInOut',
+          onUpdate: (tw) => {
+            const v = tw.getValue();
+            attackerAnim.weaponAngle = v;
+            attackerAnim.armAngle = Phaser.Math.Linear(-18, 42, (v + 1.2) / 2.1);
+            attackerAnim.torsoLean = Phaser.Math.Linear(-8, 10, (v + 1.2) / 2.1);
+            redrawModels();
+          }
+        });
+      } else {
+        this.tweens.addCounter({
+          from: 2.9,
+          to: 3.7,
+          duration: 110,
+          ease: 'Quad.easeOut',
+          yoyo: true,
+          onUpdate: (tw) => {
+            attackerAnim.weaponAngle = tw.getValue();
+            attackerAnim.headNod = Phaser.Math.Between(-2, 2);
+            redrawModels();
+          }
+        });
+      }
+
+      if (target.id === 'zombie') {
+        this.tweens.add({
+          targets: targetRig,
+          x: '-=20',
+          y: '+=8',
+          duration: 90,
+          yoyo: true,
+          ease: 'Quad.easeOut'
+        });
+        this.tweens.addCounter({
+          from: 0,
+          to: 1,
+          duration: 90,
+          yoyo: true,
+          onUpdate: (tw) => {
+            const t = tw.getValue();
+            targetAnim.headNod = Phaser.Math.Linear(0, 10, t);
+            targetAnim.weaponAngle = Phaser.Math.Linear(3.1, 3.8, t);
+            redrawModels();
+          }
+        });
+      } else {
+        this.tweens.add({
+          targets: targetRig,
+          x: '-=14',
+          duration: 90,
+          yoyo: true,
+          ease: 'Sine.easeOut'
+        });
+      }
     });
   }
 
