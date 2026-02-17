@@ -895,7 +895,7 @@ BattleScene.prototype.performAttack = function performAttack(attacker, target, o
       resolveImpact();
     }
 
-    this.time.delayedCall(1900, () => resolveImpact());
+    this.time.delayedCall(3600, () => resolveImpact());
   };
 
   this.tweens.add({
@@ -1102,25 +1102,36 @@ BattleScene.prototype.playSuperRobotWarsSequence = function playSuperRobotWarsSe
   this.tweens.add({ targets: [targetFrame, targetName, tBarBg, tBar, targetRig], x: '-=120', duration: 190, ease: 'Cubic.easeOut' });
 
   this.time.delayedCall(150, () => {
-    this.tweens.add({ targets: [clash, skillText], alpha: 1, scale: { from: 1.3, to: 1 }, duration: 180, yoyo: true, hold: 220 });
+    this.tweens.add({ targets: [clash, skillText], alpha: 1, scale: { from: 1.34, to: 1 }, duration: 280, yoyo: true, hold: 420 });
   });
 
-  const swings = Math.min(8, Math.max(2, skill.hits || 1));
+  const swings = Math.min(7, Math.max(2, skill.hits || 1));
+  const swingBase = 420;
+  const swingSpacing = attackerWeaponType === 'greatsword' ? 220 : 170;
   for (let i = 0; i < swings; i += 1) {
-    this.time.delayedCall(320 + i * 100, () => {
+    this.time.delayedCall(swingBase + i * swingSpacing, () => {
       this.playSfx(this.sfxSlash);
 
       if (attackerWeaponType === 'greatsword') {
+        const slashTrail = this.add.rectangle(attackerRig.x + 30, attackerRig.y - 10, 200, 14, 0xe8f0ff, 0.0).setAngle(-18).setBlendMode(Phaser.BlendModes.ADD);
+        overlay.add(slashTrail);
+        this.tweens.add({
+          targets: slashTrail,
+          alpha: { from: 0.9, to: 0 },
+          scaleX: { from: 0.2, to: 1.15 },
+          duration: 220,
+          onComplete: () => slashTrail.destroy()
+        });
         this.tweens.addCounter({
           from: -1.2,
           to: 0.9,
-          duration: 130,
-          ease: 'Cubic.easeInOut',
+          duration: 240,
+          ease: 'Sine.easeInOut',
           onUpdate: (tw) => {
             const v = tw.getValue();
             attackerAnim.weaponAngle = v;
-            attackerAnim.armAngle = Phaser.Math.Linear(-18, 42, (v + 1.2) / 2.1);
-            attackerAnim.torsoLean = Phaser.Math.Linear(-8, 10, (v + 1.2) / 2.1);
+            attackerAnim.armAngle = Phaser.Math.Linear(-30, 54, (v + 1.2) / 2.1);
+            attackerAnim.torsoLean = Phaser.Math.Linear(-14, 14, (v + 1.2) / 2.1);
             redrawModels();
           }
         });
@@ -1128,8 +1139,8 @@ BattleScene.prototype.playSuperRobotWarsSequence = function playSuperRobotWarsSe
         this.tweens.addCounter({
           from: 2.9,
           to: 3.7,
-          duration: 110,
-          ease: 'Quad.easeOut',
+          duration: 150,
+          ease: 'Quad.easeInOut',
           yoyo: true,
           onUpdate: (tw) => {
             attackerAnim.weaponAngle = tw.getValue();
@@ -1144,7 +1155,7 @@ BattleScene.prototype.playSuperRobotWarsSequence = function playSuperRobotWarsSe
           targets: targetRig,
           x: '-=20',
           y: '+=8',
-          duration: 90,
+          duration: 130,
           yoyo: true,
           ease: 'Quad.easeOut'
         });
@@ -1164,7 +1175,7 @@ BattleScene.prototype.playSuperRobotWarsSequence = function playSuperRobotWarsSe
         this.tweens.add({
           targets: targetRig,
           x: '-=14',
-          duration: 90,
+          duration: 130,
           yoyo: true,
           ease: 'Sine.easeOut'
         });
@@ -1172,14 +1183,14 @@ BattleScene.prototype.playSuperRobotWarsSequence = function playSuperRobotWarsSe
     });
   }
 
-  this.time.delayedCall(470, () => {
+  this.time.delayedCall(swingBase + swingSpacing + 130, () => {
     const preview = this.calculateSkillDamage(attacker, target, skill).totalDamage;
     dmgText.setText(`-${preview}`);
     this.playSfx(this.sfxHit);
     this.tweens.add({ targets: dmgText, alpha: 1, scale: { from: 2.3, to: 1 }, duration: 240, yoyo: true });
   });
 
-  this.time.delayedCall(1220, () => {
+  this.time.delayedCall(swingBase + swingSpacing * swings + 260, () => {
     this.tweens.add({
       targets: overlay,
       alpha: 0,
