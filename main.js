@@ -237,6 +237,27 @@ const UNIT_SKILL_SETS = {
   malzar: ['darkNova']
 };
 
+
+
+const PERK_DEFS = {
+  berserkMastery: { name: 'Berserk Mastery', atk: 2 },
+  steelSkin: { name: 'Steel Skin', def: 2 },
+  lifeblood: { name: 'Lifeblood', maxHp: 6 },
+  executioner: { name: 'Executioner', crit: 0.12 }
+};
+
+const UNIT_LEVEL_UNLOCKS = {
+  dzeko: { 2: 'ruinCleave' },
+  kael: { 3: 'skeletonBarrage' },
+  aria: { 3: 'darkNova' }
+};
+
+const UNIT_PERK_PATHS = {
+  dzeko: ['berserkMastery', 'lifeblood', 'executioner'],
+  kael: ['steelSkin', 'lifeblood', 'executioner'],
+  aria: ['executioner', 'steelSkin', 'lifeblood']
+};
+
 const config = {
   type: Phaser.AUTO,
   parent: 'game-container',
@@ -285,6 +306,7 @@ BattleScene.prototype.create = function create() {
   this.createHud();
   this.createFx();
   this.initAudio();
+  this.bindSkillControls();
 
   if (!GAME_STATE.roster.length) {
     GAME_STATE.roster = ['dzeko'];
@@ -376,6 +398,7 @@ BattleScene.prototype.createHud = function createHud() {
   this.unitInfo = this.add.text(panelX + 18, 300, 'Select a unit', { fontSize: '14px', color: '#e5ebff', wordWrap: { width: 245 } });
 
   this.questText = this.add.text(panelX + 18, 420, '', { fontSize: '13px', color: '#cbd8ff', wordWrap: { width: 245 } });
+  this.skillHelpText = this.add.text(panelX + 18, 520, 'Press Q to cycle unit skills', { fontSize: '12px', color: '#9bb1e4' });
 
   this.endTurnButton = this.add.rectangle(panelX + 140, 578, 220, 42, 0x6d2331, 1).setStrokeStyle(2, 0xd65c6f, 1).setInteractive();
   this.endTurnText = this.add.text(panelX + 76, 566, 'END TURN', { fontSize: '18px', color: '#fff', fontStyle: 'bold' });
@@ -507,6 +530,17 @@ BattleScene.prototype.chooseSkill = function chooseSkill(attacker) {
 
   attacker.skillCooldowns = attacker.skillCooldowns || {};
 
+  if (attacker.side === 'player') {
+    const idx = attacker.selectedSkillIndex || 0;
+    const desiredId = set[idx] || set[0];
+    const desiredCd = attacker.skillCooldowns[desiredId] || 0;
+    if (desiredCd <= 0) {
+      const skill = { id: desiredId, ...SKILLS[desiredId] };
+      if (skill.cooldown) attacker.skillCooldowns[desiredId] = skill.cooldown;
+      return skill;
+    }
+  }
+
   for (let i = 0; i < set.length; i += 1) {
     const id = set[i];
     const cd = attacker.skillCooldowns[id] || 0;
@@ -520,11 +554,27 @@ BattleScene.prototype.chooseSkill = function chooseSkill(attacker) {
   return { id: 'basic', name: 'Basic Strike', hits: 1, power: 1 };
 };
 
+
 BattleScene.prototype.reduceCooldowns = function reduceCooldowns(unit) {
   if (!unit.skillCooldowns) return;
   Object.keys(unit.skillCooldowns).forEach((k) => {
     unit.skillCooldowns[k] = Math.max(0, unit.skillCooldowns[k] - 1);
   });
+};
+
+BattleScene.prototype.bindSkillControls = function bindSkillControls() {
+  this.input.keyboard.on('keydown-Q', () => {
+    if (!this.selectedUnit || this.selectedUnit.side !== 'player') return;
+    this.cycleSelectedSkill(this.selectedUnit);
+  });
+};
+
+BattleScene.prototype.cycleSelectedSkill = function cycleSelectedSkill(unit) {
+  const set = UNIT_SKILL_SETS[unit.id] || [];
+  if (!set.length) return;
+  unit.selectedSkillIndex = ((unit.selectedSkillIndex || 0) + 1) % set.length;
+  this.selectUnit(unit);
+  this.showDialog(`${unit.name} switches skill to: ${SKILLS[set[unit.selectedSkillIndex]]?.name || 'Basic Strike'}`);
 };
 
 BattleScene.prototype.loadMap = function loadMap(index) {
@@ -616,6 +666,7 @@ BattleScene.prototype.createUnit = function createUnit(id, x, y, side, persisted
     perks: def.perks || [],
     buffs: [],
     skillCooldowns: {},
+    selectedSkillIndex: 0,
     sprite: null,
     hpText: null,
     aura: null
@@ -715,14 +766,24 @@ BattleScene.prototype.selectUnit = function selectUnit(unit) {
   this.highlightAttackTargets(unit);
 
   const terrain = this.getTerrainStats(unit);
-  const skills = (UNIT_SKILL_SETS[unit.id] || ['basic']).map((id) => SKILLS[id]?.name || 'Basic Strike').join(', ');
+  const skillIds = UNIT_SKILL_SETS[unit.id] || [];
+  const activeSkill = skillIds.length ? skillIds[unit.selectedSkillIndex || 0] : null;
+  const activeSkillName = activeSkill ? (SKILLS[activeSkill]?.name || activeSkill) : 'Basic Strike';
+  const cooldownText = activeSkill ? `CD:${unit.skillCooldowns[activeSkill] || 0}` : '';
+  const buffText = (unit.buffs || []).length
+    ? unit.buffs.map((b) => `ATK${b.atk ? (b.atk > 0 ? '+' : '') + b.atk : ''} DEF${b.def ? (b.def > 0 ? '+' : '') + b.def : ''}(${b.turns})`).join(', ')
+    : 'none';
+  const perkNames = (unit.perks || []).map((pid) => PERK_DEFS[pid]?.name || pid).join(', ') || 'none';
+
   this.unitInfo.setText([
     `${unit.portrait} ${unit.name} (${unit.className})`,
     `HP ${unit.hp}/${unit.maxHp}`,
     `ATK ${unit.atk}  DEF ${unit.def}  MOV ${unit.move}  RNG ${unit.range}`,
     `LV ${unit.level}  XP ${unit.xp}/100`,
     `Tile: ${terrain.name}  ATK ${terrain.atk >= 0 ? '+' : ''}${terrain.atk} DEF ${terrain.def >= 0 ? '+' : ''}${terrain.def}`,
-    `Skills: ${skills}`,
+    `Skill: ${activeSkillName} ${cooldownText}`,
+    `Buffs: ${buffText}`,
+    `Perks: ${perkNames}`,
     unit.moved ? 'Status: Moved (can still attack if in range)' : 'Status: Ready'
   ]);
 
@@ -944,12 +1005,14 @@ BattleScene.prototype.calculateSkillDamage = function calculateSkillDamage(attac
   const defBuff = this.getUnitBuffValue(target, 'def');
 
   const attackValue = attacker.atk + atkBuff + atkTerrain.atk + Math.floor(attacker.maxHp * 0.14);
+  const hasExecutioner = (attacker.perks || []).includes('executioner');
   const defenseValue = skill.ignoreDef ? 0 : Math.max(0, target.def + defBuff + defTerrain.def);
 
   let total = 0;
   for (let i = 0; i < (skill.hits || 1); i += 1) {
     const strike = Math.max(1, Math.floor(attackValue * (skill.power || 1)) - Math.floor(defenseValue * 0.65) + Phaser.Math.Between(-2, 4));
     total += strike;
+    if (hasExecutioner && Math.random() < 0.12) total += Math.floor(strike * 0.7);
   }
 
   if (target.perks && target.perks.includes('undeadResist')) {
@@ -1251,21 +1314,43 @@ BattleScene.prototype.applyDamage = function applyDamage(attacker, target, dmg) 
 
 BattleScene.prototype.gainXp = function gainXp(unit, amount) {
   unit.xp += amount;
-  if (unit.xp >= 100) {
+  while (unit.xp >= 100) {
     unit.xp -= 100;
     unit.level += 1;
     unit.maxHp += 4;
     unit.hp = unit.maxHp;
     unit.atk += 2;
-    unit.hpText.setText(`${unit.hp}`);
 
-    this.showDialog(`${unit.name} reached level ${unit.level}! ATK and HP increased.`);
+    const perkPath = UNIT_PERK_PATHS[unit.id] || [];
+    if (perkPath.length) {
+      const perkId = perkPath[(unit.level - 2) % perkPath.length];
+      if (!unit.perks.includes(perkId)) {
+        unit.perks.push(perkId);
+        const perk = PERK_DEFS[perkId];
+        if (perk.maxHp) { unit.maxHp += perk.maxHp; unit.hp = unit.maxHp; }
+        if (perk.atk) unit.atk += perk.atk;
+        if (perk.def) unit.def += perk.def;
+        this.showDialog(`${unit.name} unlocked perk: ${perk.name}`);
+      }
+    }
+
+    const unlocks = UNIT_LEVEL_UNLOCKS[unit.id] || {};
+    const skillId = unlocks[unit.level];
+    if (skillId) {
+      UNIT_SKILL_SETS[unit.id] = Array.from(new Set([...(UNIT_SKILL_SETS[unit.id] || []), skillId]));
+      this.showDialog(`${unit.name} learned new attack: ${SKILLS[skillId]?.name || skillId}`);
+    }
+
+    this.showDialog(`${unit.name} reached level ${unit.level}! ATK/HP increased.`);
   }
+
+  unit.hpText.setText(`${unit.hp}`);
 
   if (this.selectedUnit && this.selectedUnit.id === unit.id) {
     this.selectUnit(unit);
   }
 };
+
 
 BattleScene.prototype.killUnit = function killUnit(unit) {
   this.tweens.add({
